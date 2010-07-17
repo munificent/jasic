@@ -11,7 +11,13 @@ import java.util.*;
 /**
  * This defines a single class that contains an entire interpreter for a
  * language very similar to the original BASIC. Everything is here (albeit in
- * very simplified form): tokenizing, parsing, and interpretation.
+ * very simplified form): tokenizing, parsing, and interpretation. The file is
+ * organized in phases, with each appearing roughly in the order that they
+ * occur when a program is run. You should be able to read this top-down to walk
+ * through the entire process of loading and running a program.
+ * 
+ * Jasic language syntax
+ * ---------------------
  * 
  * Comments start with ' and proceed to the end of the line:
  * 
@@ -20,10 +26,13 @@ import java.util.*;
  * Numbers and strings are supported. Strings should be in "double quotes", and
  * only positive integers can be parsed (though numbers are double internally).
  * 
- * Lines can contain statements or labels. A label starts with : followed by a
- * name, like:
+ * Variables are identified by name which must start with a letter and can
+ * contain letters or numbers. Case is significant for names and keywords.
  * 
- *     :foo
+ * Each statement is on its own line. Optionally, a line may have a label before
+ * the statement. A label is a name that ends with a colon:
+ * 
+ *     foo:
  * 
  * 
  * The following statements are supported:
@@ -67,8 +76,16 @@ import java.util.*;
  * <expression> > <expression>
  *     You can figure it out.
  * 
+ * <name>
+ *     A name in an expression simply returns the value of the variable with
+ *     that name. If the variable was never set, it defaults to 0.
+ * 
  * All binary operators have the same precedence. Sorry, I had to cut corners
  * somewhere.
+ * 
+ * To keep things simple, I've omitted some stuff or hacked things a bit. When
+ * possible, I'll leave a "HACK" note there explaining what and why. If you
+ * make your own interpreter, you'll want to address those.
  * 
  * @author Bob Nystrom
  */
@@ -77,58 +94,40 @@ public class Jasic {
     /**
      * Runs the interpreter as a command-line app. Takes one argument: a path
      * to a script file to load and run. The script should contain one
-     * statement per line, and *must* end with a trailing newline.
+     * statement per line.
      * 
      * @param args Command-line arguments.
      */
     public static void main(String[] args) {
+        // Just show the usage and quit if a script wasn't provided.
         if (args.length != 1) {
             System.out.println("Usage: jasic <script>");
             System.out.println("Where <script> is a relative path to a .jas script to run.");
             return;
         }
         
+        // Read the file.
         String contents = readFile(args[0]);
         
+        // Run it.
         Jasic jasic = new Jasic();
         jasic.interpret(contents);
     }
     
-    public Jasic() {
-        variables = new HashMap<String, Value>();
-        labels = new HashMap<String, Integer>();
-    }
-    
     // Tokenizing (lexing) -----------------------------------------------------
-    //
-    // This phase takes a script as a string of characters and chunks it into a
-    // sequence of tokens. Each token is a meaningful unit of program, like a
-    // variable name, a number, a string, or an operator.
     
-    private enum TokenType {
-        WORD, NUMBER, STRING, LABEL, LINE,
-        EQUALS, OPERATOR, LEFT_PAREN, RIGHT_PAREN, EOF
-    }
-    private static class Token {
-        public Token(String text, TokenType type) {
-            this.text = text;
-            this.type = type;
-        }
-        
-        public final String text;
-        public final TokenType type;
-    }
-    
-    private enum TokenizeState {
-        DEFAULT, WORD, NUMBER, STRING, LABEL, COMMENT
-    }
-    
+    /**
+     * This function takes a script as a string of characters and chunks it into
+     * a sequence of tokens. Each token is a meaningful unit of program, like a
+     * variable name, a number, a string, or an operator.
+     */
     private static List<Token> tokenize(String source) {
         List<Token> tokens = new ArrayList<Token>();
         
         String token = "";
         TokenizeState state = TokenizeState.DEFAULT;
         
+        // Many tokens are a single character, like operators and ().
         String charTokens = "\n=+-*/<>()";
         TokenType[] tokenTypes = { TokenType.LINE, TokenType.EQUALS,
             TokenType.OPERATOR, TokenType.OPERATOR, TokenType.OPERATOR,
@@ -136,6 +135,8 @@ public class Jasic {
             TokenType.LEFT_PAREN, TokenType.RIGHT_PAREN
         };
         
+        // Scan through the code one character at a time, building up the list
+        // of tokens.
         for (int i = 0; i < source.length(); i++) {
             char c = source.charAt(i);
             switch (state) {
@@ -151,8 +152,6 @@ public class Jasic {
                     state = TokenizeState.NUMBER;
                 } else if (c == '"') {
                     state = TokenizeState.STRING;
-                } else if (c == ':') {
-                    state = TokenizeState.LABEL;
                 } else if (c == '\'') {
                     state = TokenizeState.COMMENT;
                 }
@@ -161,38 +160,35 @@ public class Jasic {
             case WORD:
                 if (Character.isLetterOrDigit(c)) {
                     token += c;
+                } else if (c == ':') {
+                    tokens.add(new Token(token, TokenType.LABEL));
+                    token = "";
+                    state = TokenizeState.DEFAULT;
                 } else {
                     tokens.add(new Token(token, TokenType.WORD));
                     token = "";
                     state = TokenizeState.DEFAULT;
-                    i--; // rollback to reprocess this character
+                    i--; // Reprocess this character in the default state.
                 }
                 break;
                 
             case NUMBER:
+                // HACK: Negative numbers and floating points aren't supported.
+                // To get a negative number, just do 0 - <your number>.
+                // To get a floating point, divide.
                 if (Character.isDigit(c)) {
                     token += c;
                 } else {
                     tokens.add(new Token(token, TokenType.NUMBER));
                     token = "";
                     state = TokenizeState.DEFAULT;
-                    i--; // rollback to reprocess this character
+                    i--; // Reprocess this character in the default state.
                 }
                 break;
                 
             case STRING:
                 if (c == '"') {
                     tokens.add(new Token(token, TokenType.STRING));
-                    token = "";
-                    state = TokenizeState.DEFAULT;
-                } else {
-                    token += c;
-                }
-                break;
-                
-            case LABEL:
-                if (c == '\n') {
-                    tokens.add(new Token(token.trim(), TokenType.LABEL));
                     token = "";
                     state = TokenizeState.DEFAULT;
                 } else {
@@ -208,20 +204,68 @@ public class Jasic {
             }
         }
         
-        tokens.add(new Token("", TokenType.EOF));
+        // HACK: Silently ignore any in-progress token when we run out of
+        // characters. This means that, for example, if a script has a string
+        // that's missing the closing ", it will just ditch it.
+        
         return tokens;
     }
+
+    /**
+     * This defines the different kinds of tokens or meaningful chunks of code
+     * that the parser knows how to consume. These let us distinguish, for
+     * example, between a string "foo" and a variable named "foo".
+     * 
+     * HACK: A typical tokenizer would actually have unique token types for
+     * each keyword (print, goto, etc.) so that the parser doesn't have to look
+     * at the names, but Jasic is a little more crude.
+     */
+    private enum TokenType {
+        WORD, NUMBER, STRING, LABEL, LINE,
+        EQUALS, OPERATOR, LEFT_PAREN, RIGHT_PAREN, EOF
+    }
     
+    /**
+     * This is a single meaningful chunk of code. It is created by the tokenizer
+     * and consumed by the parser.
+     */
+    private static class Token {
+        public Token(String text, TokenType type) {
+            this.text = text;
+            this.type = type;
+        }
+        
+        public final String text;
+        public final TokenType type;
+    }
+    
+    /**
+     * This defines the different states the tokenizer can be in while it's
+     * scanning through the source code. Tokenizers are state machines, which
+     * means the only data they need to store is where they are in the source
+     * code and this one "state" or mode value.
+     * 
+     * One of the main differences between tokenizing and parsing is this
+     * regularity. Because the tokenizer stores only this one state value, it
+     * can't handle nesting (which would require also storing a number to
+     * identify how deeply nested you are). The parser is able to handle that.
+     */
+    private enum TokenizeState {
+        DEFAULT, WORD, NUMBER, STRING, COMMENT
+    }
+
     // Parsing -----------------------------------------------------------------
-    //
-    // This phase takes in a sequence of tokens and generates an abstract
-    // syntax tree. This is the nested data structure that represents the
-    // series of statements, and the expressions (which can nest arbitrarily
-    // deeply) that they evaluate.
-    //
-    // As a side-effect, this phase also stores off the line numbers for each
-    // label in the program. It's a bit gross, but it works.
-    
+
+    /**
+     * This defines the Jasic parser. The parser takes in a sequence of tokens
+     * and generates an abstract syntax tree. This is the nested data structure
+     * that represents the series of statements, and the expressions (which can
+     * nest arbitrarily deeply) that they evaluate. In technical terms, what we
+     * have is a recursive descent parser, the simplest kind to hand-write.
+     *
+     * As a side-effect, this phase also stores off the line numbers for each
+     * label in the program. It's a bit gross, but it works.
+     */
     private class Parser {
         public Parser(List<Token> tokens) {
             this.tokens = tokens;
@@ -230,48 +274,90 @@ public class Jasic {
         
         // Grammar:
         
-        private List<Statement> parse(Map<String, Integer> labels) {
+        /**
+         * The top-level function to start parsing. This will keep consuming
+         * tokens and routing to the other parse functions for the different
+         * grammar syntax until we run out of code to parse.
+         * 
+         * @param  labels   A map of label names to statement indexes.
+         *                  The parser will fill this in as it scans through the
+         *                  code.
+         * @return          The list of parsed statements.
+         */
+        public List<Statement> parse(Map<String, Integer> labels) {
             List<Statement> statements = new ArrayList<Statement>();
             
             while (true) {
-                // ignore empty lines
+                // Ignore empty lines.
                 while (match(TokenType.LINE));
                 
-                if (lookAhead(TokenType.LABEL)) {
-                    // mark the index of the statement after the label
-                    labels.put(consume().text, statements.size());
-                } else if (lookAhead(TokenType.WORD, TokenType.EQUALS)) {
-                    String name = consume().text;
-                    consume(); // =
+                if (match(TokenType.LABEL)) {
+                    // Mark the index of the statement after the label.
+                    labels.put(last(1).text, statements.size());
+                } else if (match(TokenType.WORD, TokenType.EQUALS)) {
+                    String name = last(2).text;
                     Expression value = expression();
                     statements.add(new AssignStatement(name, value));
                 } else if (match("print")) {
                     statements.add(new PrintStatement(expression()));
                 } else if (match("goto")) {
-                    statements.add(new GotoStatement(consume().text));
+                    statements.add(new GotoStatement(
+                        consume(TokenType.WORD).text));
                 } else if (match("if")) {
                     Expression condition = expression();
                     consume("then");
                     String label = consume(TokenType.WORD).text;
                     statements.add(new IfThenStatement(condition, label));
-                } else break; // unexpected token, just bail
+                } else break; // Unexpected token (likely EOF), so end.
             }
             
             return statements;
         }
         
+        // The following functions each represent one grammatical part of the
+        // language. If this parsed English, these functions would be named like
+        // noun() and verb().
+        
+        /**
+         * Parses a single expression. Recursive descent parsers start with the
+         * lowest-precedent term and moves towards higher precedence. For Jasic,
+         * binary operators (+, -, etc.) are the lowest.
+         * 
+         * @return The parsed expression.
+         */
         private Expression expression() {
             return operator();
         }
         
+        /**
+         * Parses a series of binary operator expressions into a single
+         * expression. In Jasic, all operators have the same predecence and
+         * associate left-to-right. That means it will interpret:
+         *    1 + 2 * 3 - 4 / 5
+         * like:
+         *    ((((1 + 2) * 3) - 4) / 5)
+         * 
+         * It works by building the expression tree one at a time. So, given
+         * this code: 1 + 2 * 3, this will:
+         * 
+         * 1. Parse (1) as an atomic expression.
+         * 2. See the (+) and start a new operator expression.
+         * 3. Parse (2) as an atomic expression.
+         * 4. Build a (1 + 2) expression and replace (1) with it.
+         * 5. See the (*) and start a new operator expression.
+         * 6. Parse (3) as an atomic expression.
+         * 7. Build a ((1 + 2) * 3) expression and replace (1 + 2) with it.
+         * 8. Return the last expression built.
+         * 
+         * @return The parsed expression.
+         */
         private Expression operator() {
             Expression expression = atomic();
             
-            // all binary operators have the same precedence and are
-            // left-associative
-            while (lookAhead(TokenType.OPERATOR) ||
-                   lookAhead(TokenType.EQUALS)) {
-                char operator = consume().text.charAt(0);
+            // Keep building operator expressions as long as we have operators.
+            while (match(TokenType.OPERATOR) ||
+                   match(TokenType.EQUALS)) {
+                char operator = last(1).text.charAt(0);
                 Expression right = atomic();
                 expression = new OperatorExpression(expression, operator, right);
             }
@@ -279,14 +365,26 @@ public class Jasic {
             return expression;
         }
         
+        /**
+         * Parses an "atomic" expression. This is the highest level of
+         * precedence and contains single literal tokens like 123 and "foo", as
+         * well as parenthesized expressions.
+         * 
+         * @return The parsed expression.
+         */
         private Expression atomic() {
-            if (lookAhead(TokenType.WORD)) {
-                return new VariableExpression(consume().text);
-            } else if (lookAhead(TokenType.NUMBER)) {
-                return new NumberValue(Double.parseDouble(consume().text));
-            } else if (lookAhead(TokenType.STRING)) {
-                return new StringValue(consume().text);
+            if (match(TokenType.WORD)) {
+                // A word is a reference to a variable.
+                return new VariableExpression(last(1).text);
+            } else if (match(TokenType.NUMBER)) {
+                return new NumberValue(Double.parseDouble(last(1).text));
+            } else if (match(TokenType.STRING)) {
+                return new StringValue(last(1).text);
             } else if (match(TokenType.LEFT_PAREN)) {
+                // The contents of a parenthesized expression can be any
+                // expression. This lets us "restart" the precedence cascade
+                // so that you can have a lower precedence expression inside
+                // the parentheses.
                 Expression expression = expression();
                 consume(TokenType.RIGHT_PAREN);
                 return expression;
@@ -294,52 +392,99 @@ public class Jasic {
             throw new Error("Couldn't parse :(");
         }
         
-        // Basic parser functionality:
+        // The following functions are the core low-level operations that the
+        // grammar parser is built in terms of. They basically match and consume
+        // tokens in the token stream.
         
-        private boolean match(String word) {
-            if (!lookAhead(word)) return false;
-            consume();
+        /**
+         * Consumes the next two tokens if they are the given type (in order).
+         * Consumes no tokens if either check fais.
+         * 
+         * @param  type1 Expected type of the next token.
+         * @param  type2 Expected type of the subsequent token.
+         * @return       True if tokens were consumed.
+         */
+        private boolean match(TokenType type1, TokenType type2) {
+            if (get(0).type != type1) return false;
+            if (get(1).type != type2) return false;
+            position += 2;
             return true;
         }
         
+        /**
+         * Consumes the next token if it's the given type.
+         * 
+         * @param  type  Expected type of the next token.
+         * @return       True if the token was consumed.
+         */
         private boolean match(TokenType type) {
-            if (!lookAhead(type)) return false;
-            consume();
+            if (get(0).type != type) return false;
+            position++;
             return true;
         }
         
-        private Token consume(String word) {
-            if (!lookAhead(word)) throw new Error("Expected " + word + ".");
-            return consume();
+        /**
+         * Consumes the next token if it's a word token with the given name.
+         * 
+         * @param  name  Expected name of the next word token.
+         * @return       True if the token was consumed.
+         */
+        private boolean match(String name) {
+            if (get(0).type != TokenType.WORD) return false;
+            if (!get(0).text.equals(name)) return false;
+            position++;
+            return true;
         }
         
+        /**
+         * Consumes the next token if it's the given type. If not, throws an
+         * exception. This is for cases where the parser demands a token of a
+         * certain type in a certain position, for example a matching ) after
+         * an opening (.
+         * 
+         * @param  type  Expected type of the next token.
+         * @return       The consumed token.
+         */
         private Token consume(TokenType type) {
-            if (!lookAhead(type)) throw new Error("Expected " + type + ".");
-            return consume();
-        }
-        
-        private Token consume() {
+            if (get(0).type != type) throw new Error("Expected " + type + ".");
             return tokens.get(position++);
         }
         
+        /**
+         * Consumes the next token if it's a word with the given name. If not,
+         * throws an exception.
+         * 
+         * @param  name  Expected name of the next word token.
+         * @return       The consumed token.
+         */
+        private Token consume(String name) {
+            if (!match(name)) throw new Error("Expected " + name + ".");
+            return last(1);
+        }
+
+        /**
+         * Gets a previously consumed token, indexing backwards. last(1) will
+         * be the token just consumed, last(2) the one before that, etc.
+         * 
+         * @param  offset How far back in the token stream to look.
+         * @return        The consumed token.
+         */
+        private Token last(int offset) {
+            return tokens.get(position - offset);
+        }
+        
+        /**
+         * Gets an unconsumed token, indexing forward. get(0) will be the next
+         * token to be consumed, get(1) the one after that, etc.
+         * 
+         * @param  offset How far forward in the token stream to look.
+         * @return        The yet-to-be-consumed token.
+         */
         private Token get(int offset) {
             if (position + offset >= tokens.size()) {
                 return new Token("", TokenType.EOF);
             }
             return tokens.get(position + offset);
-        }
-        
-        private boolean lookAhead(String word) {
-            return (get(0).type == TokenType.WORD) &&
-                   (get(0).text.equals(word));
-        }
-        
-        private boolean lookAhead(TokenType type) {
-            return get(0).type == type;
-        }
-        
-        private boolean lookAhead(TokenType type1, TokenType type2) {
-            return (get(0).type == type1) && (get(1).type == type2);
         }
         
         private final List<Token> tokens;
@@ -357,7 +502,7 @@ public class Jasic {
     public interface Statement {
         void execute();
     }
-    
+
     public class PrintStatement implements Statement {
         public PrintStatement(Expression expression) {
             this.expression = expression;
@@ -538,6 +683,12 @@ public class Jasic {
     }
 
     // Interpreter -------------------------------------------------------------
+    
+    public Jasic() {
+        variables = new HashMap<String, Value>();
+        labels = new HashMap<String, Integer>();
+    }
+
     //
     // This is where the magic happens. This runs the code through the parsing
     // pipeline to generate the AST. Then it executes each statement. It keeps
@@ -596,6 +747,11 @@ public class Jasic {
                 while ((read = reader.read(buffer, 0, buffer.length)) > 0) {
                     builder.append(buffer, 0, read);
                 }
+                
+                // HACK: The parser expects every statement to end in a newline,
+                // even the very last one, so we'll just tack one on here in
+                // case the file doesn't have one.
+                builder.append("\n");
                 
                 return builder.toString();
             } finally {

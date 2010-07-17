@@ -1,0 +1,9 @@
+if ((1 + (2 * 3)) = 7) = 0 then fail
+
+print "all tests passed"
+goto end
+
+fail:
+  print "test failed"
+
+end:
