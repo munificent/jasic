@@ -1,12 +1,23 @@
 About
 -----
-Jasic is an exercise in simplicity and pedagogy. It is a complete standalone interpreter for a dialect of the original BASIC language that fits inside a single .java file. It handles tokenizing, parsing, interpreting, output, variables, expressions, and flow control, like a full-scale compiler or interpreter, just in miniature. I tried to keep the code simple and readable while still being terse.
 
-If you've ever wanted a gentle introduction to how programming languages work under the hood, Jasic is a good place to start.
+Jasic is an exercise in simplicity and pedagogy. It is a complete standalone
+interpreter for a dialect of the original BASIC language that fits inside a
+single .java file. It handles tokenizing, parsing, interpreting, output,
+variables, expressions, and flow control, like a full-scale compiler or
+interpreter, just in miniature. I tried to keep the code simple and readable
+while still being terse.
+
+If you've ever wanted a gentle introduction to how programming languages work
+under the hood, Jasic is a good place to start.
+
 
 Getting Started
 ---------------
-You can build Jasic using your big IDE of choice, but the simplest way is just through the command line. Open a command prompt and navigate to the main Jasic directory (where this file is), then do:
+
+You can build Jasic using your big IDE of choice, but the simplest way is just
+through the command line. Open a command prompt and navigate to the main Jasic
+directory (where this file is), then do:
 
 > javac com/stuffwithstuff/Jasic.java
 
@@ -14,12 +25,16 @@ This compiles the code. To run it, ented:
 
 > java com.stuffwithstuff.Jasic <script>
 
-Where it says <script> fill in the path to some .jas file containing Jasic code. Here's one:
+Where it says <script> fill in the path to some .jas file containing Jasic code.
+Here's one:
 
 > java com.stuffwithstuff.Jasic sample/hello.jas
 
 More Info
 ---------
-The real information about Jasic, including the language syntax and how the interpreter works is all in with the code, so go ahead and read through Jasic.java.
+
+The real information about Jasic, including the language syntax and how the
+interpreter works is all in with the code, so go ahead and read through
+Jasic.java.
 
 If you have any questions, feel free to get in touch. Cheers!

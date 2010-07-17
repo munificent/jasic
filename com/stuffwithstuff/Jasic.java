@@ -211,6 +211,8 @@ public class Jasic {
         return tokens;
     }
 
+    // Token data --------------------------------------------------------------
+
     /**
      * This defines the different kinds of tokens or meaningful chunks of code
      * that the parser knows how to consume. These let us distinguish, for
@@ -491,7 +493,7 @@ public class Jasic {
         private int position;
     }
     
-    // AST ---------------------------------------------------------------------
+    // Abstract syntax tree (AST) ----------------------------------------------
     //
     // These classes define the syntax tree data structures. This is the
     // internal representation for a chunk of code. Unlike most real compilers
@@ -503,6 +505,10 @@ public class Jasic {
         void execute();
     }
 
+    public interface Expression {
+        Value evaluate();
+    }
+    
     public class PrintStatement implements Statement {
         public PrintStatement(Expression expression) {
             this.expression = expression;
@@ -560,10 +566,6 @@ public class Jasic {
 
         private final Expression condition;
         private final String label;
-    }
-    
-    public interface Expression {
-        Value evaluate();
     }
     
     public class VariableExpression implements Expression {
