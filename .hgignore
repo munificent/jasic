@@ -1,0 +1,15 @@
+syntax: glob
+
+# ignore mac desktop files
+**.DS_Store
+
+# ignore eclipse stuff
+.classpath
+.project
+.settings/**.*
+
+# ignore build output
+bin/**.*
+
+# ignore revert backups
+**.orig
