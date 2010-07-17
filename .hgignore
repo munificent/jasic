@@ -9,7 +9,7 @@ syntax: glob
 .settings/**.*
 
 # ignore build output
-bin/**.*
+com/**.class
 
 # ignore revert backups
 **.orig

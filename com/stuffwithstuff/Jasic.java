@@ -82,9 +82,11 @@ public class Jasic {
      * @param args Command-line arguments.
      */
     public static void main(String[] args) {
-        // TODO Auto-generated method stub
-        System.out.println("Jasic");
-        System.out.println("-----");
+        if (args.length != 1) {
+            System.out.println("Usage: jasic <script>");
+            System.out.println("Where <script> is a relative path to a .jas script to run.");
+            return;
+        }
         
         String contents = readFile(args[0]);
         
