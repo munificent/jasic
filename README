@@ -28,7 +28,7 @@ This compiles the code. To run it, ented:
 Where it says <script> fill in the path to some .jas file containing Jasic code.
 Here's one:
 
-> java com.stuffwithstuff.Jasic sample/hello.jas
+> java com.stuffwithstuff.Jasic sample/mandel.jas
 
 More Info
 ---------
