@@ -47,6 +47,12 @@ import java.util.*;
  *     Evaluates the expression and prints the result.
  * 
  *     print "hello, " + "world"
+ * 
+ * input <name>
+ *     Reads in a line of input from the user and stores it in the variable with
+ *     the given name.
+ *     
+ *     input guess
  *     
  * goto <label>
  *     Jumps to the statement after the label with the given name.
@@ -207,7 +213,6 @@ public class Jasic {
         // HACK: Silently ignore any in-progress token when we run out of
         // characters. This means that, for example, if a script has a string
         // that's missing the closing ", it will just ditch it.
-        
         return tokens;
     }
 
@@ -274,16 +279,13 @@ public class Jasic {
             position = 0;
         }
         
-        // Grammar:
-        
         /**
          * The top-level function to start parsing. This will keep consuming
          * tokens and routing to the other parse functions for the different
          * grammar syntax until we run out of code to parse.
          * 
-         * @param  labels   A map of label names to statement indexes.
-         *                  The parser will fill this in as it scans through the
-         *                  code.
+         * @param  labels   A map of label names to statement indexes. The
+         *                  parser will fill this in as it scans the code.
          * @return          The list of parsed statements.
          */
         public List<Statement> parse(Map<String, Integer> labels) {
@@ -302,6 +304,9 @@ public class Jasic {
                     statements.add(new AssignStatement(name, value));
                 } else if (match("print")) {
                     statements.add(new PrintStatement(expression()));
+                } else if (match("input")) {
+                    statements.add(new InputStatement(
+                        consume(TokenType.WORD).text));
                 } else if (match("goto")) {
                     statements.add(new GotoStatement(
                         consume(TokenType.WORD).text));
@@ -395,8 +400,8 @@ public class Jasic {
         }
         
         // The following functions are the core low-level operations that the
-        // grammar parser is built in terms of. They basically match and consume
-        // tokens in the token stream.
+        // grammar parser is built in terms of. They match and consume tokens in
+        // the token stream.
         
         /**
          * Consumes the next two tokens if they are the given type (in order).
@@ -494,21 +499,49 @@ public class Jasic {
     }
     
     // Abstract syntax tree (AST) ----------------------------------------------
-    //
-    // These classes define the syntax tree data structures. This is the
-    // internal representation for a chunk of code. Unlike most real compilers
-    // or interpreters, the logic to evaluate the code is baked directly into
-    // these classes. For expressions, it's in the evaluate() method, and for
-    // statements, it's in execute().
 
+    // These classes define the syntax tree data structures. This is how code is
+    // represented internally in a way that's easy for the interpreter to
+    // understand.
+    //
+    // HACK: Unlike most real compilers or interpreters, the logic to execute
+    // the code is baked directly into these classes. Typically, it would be
+    // separated out so that the AST us just a static data structure.
+
+    /**
+     * Base interface for a Jasic statement. The different supported statement
+     * types like "print" and "goto" implement this.
+     */
     public interface Statement {
+        /**
+         * Statements implement this to actually perform whatever behavior the
+         * statement causes. "print" statements will display text here, "goto"
+         * statements will change the current statement, etc.
+         */
         void execute();
     }
 
+    /**
+     * Base interface for an expression. An expression is like a statement
+     * except that it also returns a value when executed. Expressions do not
+     * appear at the top level in Jasic programs, but are used in many
+     * statements. For example, the value printed by a "print" statement is an
+     * expression. Unlike statements, expressions can nest.
+     */
     public interface Expression {
+        /**
+         * Expression classes implement this to evaluate the expression and
+         * return the value.
+         * 
+         * @return The value of the calculated expression.
+         */
         Value evaluate();
     }
     
+    /**
+     * A "print" statement evaluates an expression, converts the result to a
+     * string, and displays it to the user.
+     */
     public class PrintStatement implements Statement {
         public PrintStatement(Expression expression) {
             this.expression = expression;
@@ -520,7 +553,39 @@ public class Jasic {
 
         private final Expression expression;
     }
+    
+    /**
+     * An "input" statement reads input from the user and stores it in a
+     * variable.
+     */
+    public class InputStatement implements Statement {
+        public InputStatement(String name) {
+            this.name = name;
+        }
+        
+        @Override public void execute() {
+            try {
+                String input = lineIn.readLine();
+                
+                // Store it as a number if possible, otherwise use a string.
+                try {
+                    double value = Double.parseDouble(input);
+                    variables.put(name, new NumberValue(value));
+                } catch (NumberFormatException e) {
+                    variables.put(name, new StringValue(input));
+                }
+            } catch (IOException e1) {
+                // HACK: Just ignore the problem.
+            }
+        }
 
+        private final String name;
+    }
+
+    /**
+     * An assignment statement evaluates an expression and stores the result in
+     * a variable.
+     */
     public class AssignStatement implements Statement {
         public AssignStatement(String name, Expression value) {
             this.name = name;
@@ -535,6 +600,9 @@ public class Jasic {
         private final Expression value;
     }
     
+    /**
+     * A "goto" statement jumps execution to another place in the program.
+     */
     public class GotoStatement implements Statement {
         public GotoStatement(String label) {
             this.label = label;
@@ -549,6 +617,10 @@ public class Jasic {
         private final String label;
     }
     
+    /**
+     * An if then statement jumps execution to another place in the program, but
+     * only if an expression evaluates to something other than 0.
+     */
     public class IfThenStatement implements Statement {
         public IfThenStatement(Expression condition, String label) {
             this.condition = condition;
@@ -568,6 +640,10 @@ public class Jasic {
         private final String label;
     }
     
+    /**
+     * A variable expression evaluates to the current value stored in that
+     * variable.
+     */
     public class VariableExpression implements Expression {
         public VariableExpression(String name) {
             this.name = name;
@@ -583,6 +659,10 @@ public class Jasic {
         private final String name;
     }
     
+    /**
+     * An operator expression evaluates two expressions and then performs some
+     * arithmetic operation on the results.
+     */
     public class OperatorExpression implements Expression {
         public OperatorExpression(Expression left, char operator,
                                   Expression right) {
@@ -597,6 +677,7 @@ public class Jasic {
             
             switch (operator) {
             case '=':
+                // Coerce to the left argument's type, then compare.
                 if (leftVal instanceof NumberValue) {
                     return new NumberValue((leftVal.toNumber() ==
                                             rightVal.toNumber()) ? 1 : 0);
@@ -605,6 +686,8 @@ public class Jasic {
                                            rightVal.toString()) ? 1 : 0);
                 }
             case '+':
+                // Addition if the left argument is a number, otherwise do
+                // string concatenation.
                 if (leftVal instanceof NumberValue) {
                     return new NumberValue(leftVal.toNumber() +
                                            rightVal.toNumber());
@@ -622,6 +705,7 @@ public class Jasic {
                 return new NumberValue(leftVal.toNumber() /
                         rightVal.toNumber());
             case '<':
+                // Coerce to the left argument's type, then compare.
                 if (leftVal instanceof NumberValue) {
                     return new NumberValue((leftVal.toNumber() <
                                             rightVal.toNumber()) ? 1 : 0);
@@ -630,6 +714,7 @@ public class Jasic {
                                            rightVal.toString()) < 0) ? 1 : 0);
                 }
             case '>':
+                // Coerce to the left argument's type, then compare.
                 if (leftVal instanceof NumberValue) {
                     return new NumberValue((leftVal.toNumber() >
                                             rightVal.toNumber()) ? 1 : 0);
@@ -646,21 +731,41 @@ public class Jasic {
         private final Expression right;
     }
     
-    // Value Types -------------------------------------------------------------
-    //
-    // These classes define the basic kinds of values the interpreter can
-    // manipulate. They are what it stores in variables, and what expressions
-    // evaluate to.
-    //
-    // To save a little space, the value types here also do double-duty as
-    // expression literals in the AST.
+    // Value types -------------------------------------------------------------
     
-    public interface Value {
+    /**
+     * This is the base interface for a value. Values are the data that the
+     * interpreter processes. They are what gets stored in variables, printed,
+     * and operated on.
+     * 
+     * There is an implementation of this interface for each of the different
+     * primitive types (really just double and string) that Jasic supports.
+     * Wrapping them in a single Value interface lets Jasic be dynamically-typed
+     * and convert between different representations as needed.
+     * 
+     * Note that Value extends Expression. This is a bit of a hack, but it lets
+     * us use values (which are typically only ever seen by the interpreter and
+     * not the parser) as both runtime values, and as object representing
+     * literals in code.
+     */
+    public interface Value extends Expression {
+        /**
+         * Value types override this to convert themselves to a string
+         * representation.
+         */
         String toString();
+        
+        /**
+         * Value types override this to convert themselves to a numeric
+         * representation.
+         */
         double toNumber();
     }
     
-    public class NumberValue implements Value, Expression {
+    /**
+     * A numeric value. Jasic uses doubles internally for all numbers.
+     */
+    public class NumberValue implements Value {
         public NumberValue(double value) {
             this.value = value;
         }
@@ -672,7 +777,10 @@ public class Jasic {
         private final double value;
     }
     
-    public class StringValue implements Value, Expression {
+    /**
+     * A string value.
+     */
+    public class StringValue implements Value {
         public StringValue(String value) {
             this.value = value;
         }
@@ -686,30 +794,41 @@ public class Jasic {
 
     // Interpreter -------------------------------------------------------------
     
+    /**
+     * Constructs a new Jasic instance. The instance stores the global state of
+     * the interpreter such as the values of all of the variables and the
+     * current statement.
+     */
     public Jasic() {
         variables = new HashMap<String, Value>();
         labels = new HashMap<String, Integer>();
+        
+        InputStreamReader converter = new InputStreamReader(System.in);
+        lineIn = new BufferedReader(converter);
     }
 
-    //
-    // This is where the magic happens. This runs the code through the parsing
-    // pipeline to generate the AST. Then it executes each statement. It keeps
-    // track of the current line in a member variable that the statement objects
-    // have access to. This lets "goto" and "if then" do flow control by simply
-    // setting the index of the current statement.
-    //
-    // In an interpreter that didn't mix the interpretation logic in with the
-    // AST node classes, this would be doing a lot more work.
-    
+    /**
+     * This is where the magic happens. This runs the code through the parsing
+     * pipeline to generate the AST. Then it executes each statement. It keeps
+     * track of the current line in a member variable that the statement objects
+     * have access to. This lets "goto" and "if then" do flow control by simply
+     * setting the index of the current statement.
+     *
+     * In an interpreter that didn't mix the interpretation logic in with the
+     * AST node classes, this would be doing a lot more work.
+     * 
+     * @param source A string containing the source code of a .jas script to
+     *               interpret.
+     */
     public void interpret(String source) {
-        // tokenize
+        // Tokenize.
         List<Token> tokens = tokenize(source);
         
-        // parse
+        // Parse.
         Parser parser = new Parser(tokens);
         List<Statement> statements = parser.parse(labels);
         
-        // interpret
+        // Interpret until we're done.
         currentStatement = 0;
         while (currentStatement < statements.size()) {
             int thisStatement = currentStatement;
@@ -721,6 +840,8 @@ public class Jasic {
     private final Map<String, Value> variables;
     private final Map<String, Integer> labels;
     
+    private final BufferedReader lineIn;
+    
     private int currentStatement;
     
     // Utility stuff -----------------------------------------------------------
@@ -729,9 +850,9 @@ public class Jasic {
      * Reads the file from the given path and returns its contents as a single
      * string.
      * 
-     * @param path Path to the text file to read.
-     * @return The contents of the file or null if the load failed.
-     * @throws IOException
+     * @param  path  Path to the text file to read.
+     * @return       The contents of the file or null if the load failed.
+     * @throws       IOException
      */
     private static String readFile(String path) {
         try {
