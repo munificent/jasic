@@ -547,7 +547,7 @@ public class Jasic {
             this.expression = expression;
         }
         
-        @Override public void execute() {
+        public void execute() {
             System.out.println(expression.evaluate().toString());
         }
 
@@ -563,7 +563,7 @@ public class Jasic {
             this.name = name;
         }
         
-        @Override public void execute() {
+        public void execute() {
             try {
                 String input = lineIn.readLine();
                 
@@ -592,7 +592,7 @@ public class Jasic {
             this.value = value;
         }
         
-        @Override public void execute() {
+        public void execute() {
             variables.put(name, value.evaluate());
         }
 
@@ -608,7 +608,7 @@ public class Jasic {
             this.label = label;
         }
         
-        @Override public void execute() {
+        public void execute() {
             if (labels.containsKey(label)) {
                 currentStatement = labels.get(label).intValue();
             }
@@ -627,7 +627,7 @@ public class Jasic {
             this.label = label;
         }
         
-        @Override public void execute() {
+        public void execute() {
             if (labels.containsKey(label)) {
                 double value = condition.evaluate().toNumber();
                 if (value != 0) {
@@ -771,8 +771,8 @@ public class Jasic {
         }
         
         @Override public String toString() { return Double.toString(value); }
-        @Override public double toNumber() { return value; }
-        @Override public Value evaluate() { return this; }
+        public double toNumber() { return value; }
+        public Value evaluate() { return this; }
 
         private final double value;
     }
@@ -786,8 +786,8 @@ public class Jasic {
         }
         
         @Override public String toString() { return value; }
-        @Override public double toNumber() { return Double.parseDouble(value); }
-        @Override public Value evaluate() { return this; }
+        public double toNumber() { return Double.parseDouble(value); }
+        public Value evaluate() { return this; }
 
         private final String value;
     }

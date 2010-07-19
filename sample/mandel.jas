@@ -70,5 +70,5 @@ enddraw:  ' move to the next x position
           print line
           
           ' move to the next y position
-          y = y + (1 / 15)
+          y = y + (1 / 11)
           if y < (5 / 4) then yloop
