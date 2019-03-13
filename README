@@ -21,7 +21,7 @@ directory (where this file is), then do:
 
 > javac com/stuffwithstuff/Jasic.java
 
-This compiles the code. To run it, ented:
+This compiles the code. To run it, enter:
 
 > java com.stuffwithstuff.Jasic <script>
 
